@@ -17,6 +17,14 @@ type SemanticToken = {
 const tokenTypesMap = new Map<string, number>();
 const tokenModifiersMap = new Map<string, number>();
 
+/* Legend for all the token types and modifiers that the provider will produce.
+* This object will be indexed by Vscode to produce the tokens based on what the
+* SemanticTokensProvider builds for a given document.
+*
+* The gleamSemanticToken variables are procedurally derived from the tree-sitter-gleam grammar's
+* highlights query by a build script. The modifiers are not currently in-use, but a placeholder is
+* included for API completeness and possible future expansion.
+*/
 export const legend = (() => {
   gleamSemanticTokenTypes.forEach((tokenType, index) => tokenTypesMap.set(tokenType, index));
 
@@ -74,15 +82,16 @@ export class GleamSemanticTokensProvider implements vscode.DocumentSemanticToken
     // const injectionsQuery = lang.query(injectionsQueryRaw);
   }
 
-  // build a representation of the semantic tokens in the document for vscode's SemanticTokensBuilder API
-  // this function is called by vscode whenever it needs to update the semantic tokens for a document.
+  /* Build a representation of the semantic tokens in the document for vscode's SemanticTokensBuilder API.
+  * This method is called by vscode whenever it needs to update the semantic tokens for a document.
+  */
   async provideDocumentSemanticTokens(document: vscode.TextDocument, _: vscode.CancellationToken) {
     const builder = new vscode.SemanticTokensBuilder(legend);
 
     const docText = document.getText();
     const docURI = document.uri.toString();
 
-    // wait for the initialization or updates to complete
+    // Wait for the initialization or tree updates to complete. (using this promise as a lock)
     await this.providerReadyLock;
 
     // get the tree for this document from the cache
@@ -115,7 +124,7 @@ export class GleamSemanticTokensProvider implements vscode.DocumentSemanticToken
     return builder.build();
   }
 
-  // convert the token type to an integer representing its index in the legend
+  // convert the token type string to an integer representing its index in the legend (builder api requirement)
   private _encodeTokenType(tokenType: string): number {
     if (tokenTypesMap.has(tokenType)) {
       return tokenTypesMap.get(tokenType)!;
@@ -126,7 +135,7 @@ export class GleamSemanticTokensProvider implements vscode.DocumentSemanticToken
   }
 
   //NOTE: essentially unused for now (no modifiers)
-  // convert the token type modifiers to a bitmask
+  // convert the token type modifiers to a bitmask (builder api requirement)
   private _encodeTokenModifiers(strTokenModifiers: string[]): number {
     let result = 0;
     for (let i = 0; i < strTokenModifiers.length; i++) {
@@ -140,6 +149,7 @@ export class GleamSemanticTokensProvider implements vscode.DocumentSemanticToken
     return result;
   }
 
+  // convert the QueryMatch list produced by tree-sitter's parser into a list of SemanticTokens
   private _mapTSMatchesToSemanticTokens(matches: Parser.QueryMatch[]): SemanticToken[] {
     const tokens = matches
       .flatMap((match) => match.captures)
@@ -153,6 +163,7 @@ export class GleamSemanticTokensProvider implements vscode.DocumentSemanticToken
           return [];
         }
 
+        // construct the token object
         const token: SemanticToken = {
           line: start.row,
           startCharacter: start.column,
@@ -212,7 +223,15 @@ export class GleamSemanticTokensProvider implements vscode.DocumentSemanticToken
     return tokens;
   }
 
+  /* Update the cached tree for a document when it's changed.
+  * This should be set up to be triggered by VScode whenever the contents of a text document change.
+  * The method will lock the provider until the update is complete, and then use the tree-sitter
+  * incremental parsing API tree.edit() to update the tree.stored in the provider's cache for the
+  * given document by mutating it in-place. If the document is not in the cache, this method will
+  * take no action.
+  */
   async updateCachedTree(e: vscode.TextDocumentChangeEvent) {
+    // Lock the SemanticTokenProvider until the update completes
     this.providerReadyLock = (async () => {
       const docURI = e.document.uri.toString();
       let tree = this.cachedTrees.get(docURI);
