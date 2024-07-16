@@ -7,6 +7,7 @@ import {
   LanguageClientOptions,
   ServerOptions,
 } from "vscode-languageclient/node";
+import { GleamSemanticTokensProvider, legend } from "./SemanticTokenProvider";
 
 const enum GleamCommands {
   RestartServer = "gleam.restartServer",
@@ -17,6 +18,10 @@ let configureLang: vscode.Disposable | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   const onEnterRules = [...continueTypingCommentsOnNewline()];
+
+  // selector and provider for setting up semantic token highlighting
+  const selector = { language: 'gleam' };
+  const provider = new GleamSemanticTokensProvider();
 
   configureLang = vscode.languages.setLanguageConfiguration("gleam", {
     onEnterRules,
@@ -45,6 +50,16 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(restartCommand);
+
+  // register the semantic tokens provider
+  context.subscriptions.push(
+    vscode.languages.registerDocumentSemanticTokensProvider(selector, provider, legend)
+  );
+
+  // listen for document changes to do incremental updates to the cached parse trees
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((e) => { provider.updateCachedTree(e); }
+  ));
 
   client = await createLanguageClient();
   // Start the client. This will also launch the server

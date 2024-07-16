@@ -3,6 +3,7 @@
 "use strict";
 
 const path = require("path");
+const CopyPlugin = require("copy-webpack-plugin");
 
 /**@type {import('webpack').Configuration}*/
 const config = {
@@ -37,5 +38,14 @@ const config = {
       },
     ],
   },
+  plugins: [
+    new CopyPlugin({
+      patterns: [
+        { from: "tree-sitter-gleam.wasm", to: "" }, // just copy our wasm file to the output directory
+        { from: "node_modules/web-tree-sitter/tree-sitter.wasm", to: "" },
+        // { from: "node_modules/tree-sitter-gleam/queries/highlights.scm", to: "" },
+      ],
+    }),
+  ],
 };
 module.exports = config;
